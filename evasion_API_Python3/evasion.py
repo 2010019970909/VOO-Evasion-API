@@ -1,5 +1,6 @@
 """
-    evasion.py is an API which allows to detect and control an .évasion box from VOO
+    evasion.py is an API which allows to detect and control an .évasion box
+    from VOO
     Copyright (C) 2019 Vincent STRAGIER (vincent.stragier@outlook.com)
 
     This program is free software: you can redistribute it and/or modify
@@ -16,90 +17,101 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 from __future__ import print_function
+from functools import partial
 import argparse
 import socket
+import traceback
 import os
 import sys
 
-command = dict()
-command["REMOTE_0"] = 58112
-command["REMOTE_1"] = 58113
-command["REMOTE_2"] = 58114
-command["REMOTE_3"] = 58115
-command["REMOTE_4"] = 58116
-command["REMOTE_5"] = 58117
-command["REMOTE_6"] = 58118
-command["REMOTE_7"] = 58119
-command["REMOTE_8"] = 58120
-command["REMOTE_9"] = 58121
-command["FAST_REVERSE"] = 58375
-command["FAST_FORWARD"] = 58373
-command["PLAY"] = 58368
-command["MUTE"] = 57349
-command["STAND_BY"] = 57344
-command["STOP"] = 58370
-command["RECORD"] = 58371
-command["TV"] = 57360
-command["VOD"] = 61224
-command["GUIDE"] = 57355
-command["INFO"] = 57358
-command["MY_RECORDINGS"] = 61235
-command["VIDEO_WALL"] = 61234
-command["APPLICATION"] = 57352
-command["BE_ON_DEMAND"] = 61236
-command["BACK"] = 57346
-command["HOME"] = 61184
-command["VOL_UP"] = 57347
-command["VOL_DOWN"] = 57348
-command["UP"] = 57600
-command["DOWN"] = 57601
-command["LEFT"] = 57602
-command["RIGHT"] = 57603
-command["RED_KEY"] = 57856
-command["BE_TV"] = 57359
-command["OK"] = 57345
+KNOWN_PORTS = [5900, 38520]
+
+command = {
+    "REMOTE_0": 58112,
+    "REMOTE_1": 58113,
+    "REMOTE_2": 58114,
+    "REMOTE_3": 58115,
+    "REMOTE_4": 58116,
+    "REMOTE_5": 58117,
+    "REMOTE_6": 58118,
+    "REMOTE_7": 58119,
+    "REMOTE_8": 58120,
+    "REMOTE_9": 58121,
+    "FAST_REVERSE": 58375,
+    "FAST_FORWARD": 58373,
+    "PLAY": 58368,
+    "MUTE": 57349,
+    "STAND_BY": 57344,
+    "STOP": 58370,
+    "RECORD": 58371,
+    "TV": 57360,
+    "VOD": 61224,
+    "GUIDE": 57355,
+    "INFO": 57358,
+    "MY_RECORDINGS": 61235,
+    "VIDEO_WALL": 61234,
+    "APPLICATION": 57352,
+    "BE_ON_DEMAND": 61236,
+    "BACK": 57346,
+    "HOME": 61184,
+    "VOL_UP": 57347,
+    "VOL_DOWN": 57348,
+    "UP": 57600,
+    "DOWN": 57601,
+    "LEFT": 57602,
+    "RIGHT": 57603,
+    "RED_KEY": 57856,
+    "BE_TV": 57359,
+    "OK": 57345,
+}
 
 command_ls = list(command.keys())
 
-# Allows to mask print() to the user
-class manageVerbose:
+
+class ManageVerbose:
+    """Allows to mask print() to the user."""
+
     def __init__(self, verbose=True):
         self.verbosity = verbose
-        
+
     def __enter__(self):
-        if self.verbosity == False:
+        if not self.verbosity:
             self._original_stdout = sys.stdout
             sys.stdout = open(os.devnull, 'w')
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.verbosity == False:
+        if not self.verbosity:
             sys.stdout.close()
             sys.stdout = self._original_stdout
 
-# Check the behaviour of the connection mechanism to detect the .evasion box(es)        
-def isRFBandLikeVOOevasion(ip, port=5900, timeout=2, verbose=False):
-    with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as tcp:
+
+def is_RFB_and_like_VOO_evasion(ip, port, timeout=2, verbose=False):
+    """Check the behaviour of the connection mechanism to detect the .evasion
+     box(es)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp:
         try:
             tcp.settimeout(timeout)
             tcp.connect((ip, port))
             serverMSG = tcp.recv(4096)
-            
-            if not serverMSG[0:3] == b'RFB':  # Not using RFB
+
+            if serverMSG[0:3] != b'RFB':  # Not using RFB
                 # print(serverMSG)
                 return False
 
-            tcp.send(serverMSG) # Continue the handcheck
+            tcp.send(serverMSG)  # Continue the handcheck
 
             serverMSG = tcp.recv(4096)
 
-            if not serverMSG == b'\x01\x01': # Security is not the same as on the .evasion box
+            # Security is not the same as on the .evasion box
+            if serverMSG != b'\x01\x01':
                 # print(serverMSG)
                 return False
 
             tcp.send(b'\x01')
             serverMSG = tcp.recv(4096)
 
-            if not serverMSG == b'\x00\x00\x00\x00': # ?? Error about security negociation
+            # ?? Error about security negotiation
+            if serverMSG != b'\x00\x00\x00\x00':
                 return False
 
             tcp.send(b'\x01')
@@ -109,110 +121,104 @@ def isRFBandLikeVOOevasion(ip, port=5900, timeout=2, verbose=False):
                 return True
             # print(len(serverMSG))
             return False
-        
-        except Exception as e:
+
+        except Exception:
             if verbose:
-                print(e)
+                print(traceback.format_exc())
             return False
 
-# Remove all the element corresponding to the "value_to_remove" from "the_list" and return a list
-def purgeList(the_list, value_to_remove):
-    temp = list()
-    for i in the_list:
-        if not i == value_to_remove:
-            temp.append(i)
-    return temp
 
-# NOT WORKING
-def commandToSetvolume(vol):
-    VOL_DOWN = 57348
-    VOL_UP = 57347
-    cmd = list()
+def command_to_set_volume(volume: int) -> list:
+    # NOT WORKING (? add a delay ?)
+    VOL_DOWN, VOL_UP = 57348, 57347
+    cmd = [VOL_DOWN for _ in range(21)]
 
-    for _ in range(21):
-        cmd.append(VOL_DOWN)
-    for _ in range(vol):
+    for _ in range(volume):
         cmd.append(VOL_UP)
 
     return cmd
 
 
-# Adaptation of "isRFBandLikeVOOevasion()" for Pool
-def isRFBandLikeVOOevasionPool(ip, port=5900, timeout=0.5, verbose=False):
-    if isRFBandLikeVOOevasion(ip, port, timeout, verbose):
+def is_RFB_and_like_VOO_evasion_Pool(
+        ip, port=5900, timeout=0.5, verbose=False):
+    """Adaptation of "is_RFB_and_like_VOO_evasion()" for Pool."""
+    if is_RFB_and_like_VOO_evasion(ip, port, timeout, verbose):
         return ip
     return 0
 
-# Scan the default interface network (all the IPs on the  interface) to find .evasion box(es) and return a list of potential boxes.
-def scanRFB():
+
+def scan_RFB(ports: list):
+    """Scan the default interface network (all the IPs on the  interface)
+    to find .evasion box(es) and return a list of potential boxes."""
     import netifaces
     import ipaddress
     from multiprocessing import Pool
 
+    # Find default network interface
     default_iface = netifaces.gateways()['default'][netifaces.AF_INET]
+    # Addresses de l'interface
     addrs = netifaces.ifaddresses(default_iface[1])[netifaces.AF_INET]
-    ls = list()
+
+    ls = []
 
     for addr in addrs:
-        mask = ipaddress.ip_address(addr["netmask"]) # Extract and compute subnet mask
-        mask = format(int(mask), "32b")
+        for port in ports:
+            print(port)
+            # Extract and compute subnet mask
+            mask = format(int(ipaddress.ip_address(addr["netmask"])), "32b")
+            print(f"{mask = }")
 
-        cnt_0 = 0
-        cnt_1 = 0
-        for bit in mask:
-            if bit == "1" and cnt_0 == 0:
-                cnt_1 += 1
-            elif bit == "0":
-                cnt_0 += 1
+            cnt_1 = mask.count("1")
+            if cnt_1 > 0 and mask == f"{'1' * cnt_1}{'0' * (32 - cnt_1)}":
+                mask = f"{cnt_1}"
             else:
-                cnt_1 = -1
-                break
-        
-        if cnt_1 > 0:
-            mask = str(cnt_1)
-        else:
-            print('Error, invalid mask address.')
-        ip = addr["broadcast"].replace('255','0') + '/' + mask
-        net =  ipaddress.ip_network(ip)
-        
-        # Base IP address
-        print(net)
+                print('Error, invalid mask address.')
+                mask = 'invalid mask'
 
-        addresses = list()
-        
-        for x in net:
-            addresses.append(str(x))
+            ip_base = ipaddress.ip_network(
+                f"{addr['broadcast'].replace('255', '0')}/{mask}")
 
-        # Configure pool (scaling depend of the number of CPU)
-        n = os.cpu_count()*25 #len(addresses)
-        if n>256:
-            n = 256
-        print("Pool size (max=256): " + str(n))
+            # Base IP address
+            print(f"{ip_base = }")
 
-        # Scan all the addresses with the help of a pool
-        with Pool(n) as p:
-            ls_evasion = p.map(isRFBandLikeVOOevasionPool, addresses)
+            addresses = [str(address) for address in ip_base]
 
-        # Clean the results
-        ls_evasion = purgeList(ls_evasion, 0)     
-        print(ls_evasion)
-        for ip in ls_evasion:
-            ls.append(ip)
+            # Configure pool (scaling depend of the number of CPU)
+            n = os.cpu_count() * 25
+            n_max = 60  # Seems to be a limit in Windows...
+            if n > n_max:
+                n = n_max
+            print(f"Pool size (max={n_max}): {n}")
 
-    print("Scan is done (" + str(len(ls)) + " address(es)).")
+            # Scan all the addresses with the help of a pool
+            scan_function = partial(
+                is_RFB_and_like_VOO_evasion_Pool,
+                port=port
+            )
+            with Pool(n) as p:
+                ls_evasion = p.map(scan_function, addresses)
+
+            # Clean the results
+            ls_evasion = [
+                (element, port) for element in ls_evasion if element != 0]
+            ls.extend(ls_evasion)
+            # print(ls)
+
+    print(f"Scan completed ({len(ls)} address{'es' if len(ls) > 1 else ''}).")
     return ls
 
-# Display the list of valid know command (name and value)
-def displayCommand():
-    l = list(command.keys())
-    l.sort()
-    
-    for cmd in l:
-        print(cmd + " = " + str(command[cmd]))
-    return
 
-# Check the command validity (non case sensitive)
-def isValidCommand(temp_command):
+def displayCommand():
+    """Display the list of valid know command (name and value)."""
+    commands = list(command.keys())
+    commands.sort()
+
+    for cmd in commands:
+        print(f"{cmd} = {command[cmd]}")
+
+
+def is_valid_command(temp_command):
+    """Check the command validity (non case sensitive)."""
     if temp_command.upper() in command_ls:
         return True
     elif True:
@@ -222,27 +228,29 @@ def isValidCommand(temp_command):
                 return True
             else:
                 return False
-        except:
+        except Exception:
             return False
-            
+
     else:
         return False
 
-# Convert a command (name or value to value)
-def convertCommandToValue(temp_command):
-    if isValidCommand(temp_command):
+
+def convert_command_to_value(temp_command):
+    """Convert a command (name or value to value)."""
+    if is_valid_command(temp_command):
         try:
             return command[temp_command]
-        except:
+        except Exception:
             return int(temp_command)
 
-# Convert a command (value to name or name to value)
-def convertCommand(temp_command):
+
+def convert_command(temp_command):
+    """Convert a command (value to name or name to value)."""
     try:
         return command[temp_command]
-    except:
-        keys = list()
-        if keys==None:
+    except Exception:
+        keys = []
+        if keys is None:
             print("NO KEY FOUND")
         for key, val in command.items():
             if val == int(temp_command):
@@ -250,103 +258,121 @@ def convertCommand(temp_command):
         if keys:
             temp_str = ' or '
             return temp_str.join(keys)
-        
-        raise NameError('Did not find the corresponding command name for this value')
 
-# Check the "type" in the parser for the port
-def type_port(astring):
+        raise NameError(
+            'Did not find the corresponding command name for this value')
+
+
+def type_port(a_string: str):
+    """Check the "type" in the parser for the port."""
     try:
-        p = int(astring)
+        p = int(a_string)
         if p >= 0 and p <= 65535:
-            return astring
+            return a_string
         else:
-            raise argparse.ArgumentTypeError("Value should be an integer between 0 and 65535 included.")
-    except:
-        raise argparse.ArgumentTypeError("Value should be an integer between 0 and 65535 included.")
+            raise argparse.ArgumentTypeError(
+                "Value should be an integer between 0 and 65535 included.")
+    except Exception:
+        raise argparse.ArgumentTypeError(
+            "Value should be an integer between 0 and 65535 included.")
 
-# Check the "type" in the parser for the command
-def type_command(astring):
-    if isValidCommand(astring):
-        return astring
+
+def type_command(a_string: str):
+    """Check the "type" in the parser for the command."""
+    if is_valid_command(a_string):
+        return a_string
     else:
-        raise argparse.ArgumentTypeError("Invalid command ('" + astring + "'), use '-lc' to list the valid commands")
+        raise argparse.ArgumentTypeError(
+            f"Invalid command ('{a_string}'), use '-lc' to list the valid "
+            "commands")
 
-# Display the security type of the RFB connection
-def displaySecurityType(sec_type):
-    switcher = {
-        0: "Invalid",
-        1: "NONE",
-        2: "VNC Authentication"
-    } 
-    print(' security type: ' + str(sec_type) + ' (' + switcher.get(sec_type,"Not defined by IETF") +')' )
 
-# Generate a bytes array with the command to send (KEYDOWN_KEY, KEYUP_KEY)
-def genPacketFromCmd(cmd): #Set KEYUP, set KEYDOWN
-    return b'\x04\x01\x00\x00' + (cmd).to_bytes(4, byteorder='big') + b'\x04\x00\x00\x00' + (cmd).to_bytes(4, byteorder='big')
+def displaySecurityType(sec_type: int) -> None:
+    """Display the security type of the RFB connection."""
+    switcher = {0: "Invalid", 1: "NONE", 2: "VNC Authentication"}
+    security_type = switcher.get(sec_type, "Not defined by IETF")
+    print(f' security type: {sec_type} ({security_type})')
 
-# Convert a channel number in a sequence of command
-def channelToCommand(ch):
-    cmd_ls = list()
+
+def gen_packet_from_cmd(cmd: str) -> bytes:
+    """
+    Generate a bytes array with the command to send (KEYDOWN_KEY, KEYUP_KEY)
+    """
+    return (b'\x04\x01\x00\x00' + (cmd).to_bytes(4, byteorder='big')
+            + b'\x04\x00\x00\x00' + (cmd).to_bytes(4, byteorder='big'))
+
+
+def channel_to_command(ch):
+    """Convert a channel number in a sequence of command."""
+    cmd_ls = []
     try:
         ch_str = str(abs(ch))
-    except Exception as e:
-        print(e)
+    except Exception:
+        print(traceback.format_exc())
         exit(1)
-    
+
     for c in ch_str:
-        cmd_ls.append(convertCommandToValue('REMOTE_'+c))
-    cmd_ls.append(convertCommandToValue('OK'))
+        cmd_ls.append(convert_command_to_value('REMOTE_' + c))
+    cmd_ls.append(convert_command_to_value('OK'))
     return cmd_ls
 
-# Send the command to the defined address
+
 def send_cmd(ip, port, cmd, timeout=None):
+    """Send the command to the defined address."""
     try:
-        with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as vnc:
-            print("1. Initialize connection to:\n IP: " + ip + "\n Port: " + str(port))
-            if timeout and (type(timeout)==type(float()) or type(timeout)==type(int())):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as vnc:
+            print("1. Initialize connection to:\n IP: " +
+                  ip + "\n Port: " + str(port))
+            if (timeout and (isinstance(timeout, float)
+                             or isinstance(timeout, int))):
                 vnc.settimeout(timeout)
-            vnc.connect((ip,5900))
+            vnc.connect((ip, 5900))
             vnc_ver = vnc.recv(12)
-            print("Receive RFB protocol version: " + str(vnc_ver))
+            print(f"Receive RFB protocol version: {vnc_ver}")
             vnc.send(vnc_ver)
-            print("Send back RFB protocol version: " + str(vnc_ver))
+            print(f"Send back RFB protocol version: {vnc_ver}")
             print("2. Receive security")
             nb_sec_types = ord(vnc.recv(1))
-            #print(nb_sec_types.decode())
-            print("Nb security types: " + str(nb_sec_types))
-            
-            for _ in range(0, nb_sec_types):
+            # print(nb_sec_types.decode())
+            print(f"Nb security types: {nb_sec_types}")
+
+            for _ in range(nb_sec_types):
                 sec_type = ord(vnc.recv(1))
                 displaySecurityType(sec_type)
 
-            ClientInit = b'\x01' 
-            print("3. Send ClientInit message: " + str(ClientInit)) # Send 1 byte
-            vnc.send(ClientInit) # 0 -> Non exclusive connection, 1 -> exclusive connection
-            ServerInit = vnc.recv(4096)
-            print("Receive ServerInit: " + str(ServerInit))
-            ClientEncodage = b'\x01' 
-            print("4. Send Client to server message: " + str(ClientEncodage)) # Send 1 byte
+            ClientInit = b'\x01'
+            print(f"3. Send ClientInit message: {ClientInit}")  # Send 1 byte
+            # 0 -> Non exclusive connection, 1 -> exclusive connection
+            vnc.send(ClientInit)
+
+            print(f"Receive ServerInit: {vnc.recv(4096)}")
+
+            ClientEncodage = b'\x01'
+            # Send 1 byte
+            print(f"4. Send Client to server message: {ClientEncodage}")
             vnc.send(ClientEncodage)
-            ServerClient = vnc.recv(4096)
-            print("Receive from ServerClient: " + str(ServerClient))
-            if type(cmd) == type(str()):
-                print("5. Send command '" + str(cmd) + "': " + str(genPacketFromCmd(cmd)))
-                vnc.send(genPacketFromCmd(cmd))
-            elif type(cmd) == type(list()):
-                if len(cmd)>1:
+
+            print(f"Receive from ServerClient: {vnc.recv(4096)}")
+            if isinstance(cmd, str):
+                print(f"5. Send command '{cmd}': {gen_packet_from_cmd(cmd)}")
+                vnc.send(gen_packet_from_cmd(cmd))
+            elif isinstance(cmd, list):
+                if len(cmd) > 1:
                     print("5. Send multiple commands:")
                 else:
                     print("5. ", end="")
-                
+
                 for c in cmd:
-                    print("Send command '"+ str(c) + "': " + str(genPacketFromCmd(c)))
-                    vnc.send(genPacketFromCmd(c))
+                    print(f"\tSend command '{c}': {gen_packet_from_cmd(c)}")
+                    vnc.send(gen_packet_from_cmd(c))
             else:
-                raise NameError('In function send_cmd(), "cmd" should be a string or a list of string.')
+                raise NameError('In function send_cmd(), "cmd" should be a '
+                                'string or a list of string.')
             return True, None
     except Exception as e:
-        print(e)
+        print(traceback.format_exc())
         return False, e
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -357,28 +383,38 @@ def main():
                         help="return a list of potential .evasion boxes.",
                         action="store_true")
     parser.add_argument("-s", "--status", default=False,
-                        help="return 'success' if the command has been send else it return 'fail'.",
+                        help="return 'success' if the command has been send "
+                             "else it return 'fail'.",
                         action="store_true")
     parser.add_argument("-a", "--address", type=str,
                         help="IP address of the .evasion box")
     parser.add_argument("-p", "--port", type=type_port, default=5900,
-                        help="port of the .evasion box, default is 5900 [optional]")
+                        help="port of the .evasion box, default is 5900 "
+                             "[optional], note that VOO TV+ uses ")
     parser.add_argument("-c", "--command", type=type_command, nargs='+',
-                        help="command to send to the .evasion box (the command is checked), name of the command and value are accepted")
+                        help="command to send to the .evasion box (the "
+                             "command is checked), name of the command and "
+                             "value are accepted")
     parser.add_argument("-ch", "--channel", type=int,
-                        help="send the command to the .evasion box to change the channel (must be an integer)")
+                        help="send the command to the .evasion box to change "
+                             "the channel (must be an integer)")
     # NOT WORKING
-    #parser.add_argument("-vol", "--volume", type=int,
-    #                    help="send the command to the .evasion box to change the volume (must be an integer [0-20])")
+    parser.add_argument("-vol", "--volume", type=int,
+                        help="send the command to the .evasion box to change "
+                        "the volume (must be an integer [0-20])")
     # Not implemented
-    #parser.add_argument("-rc", "--raw_command", type=int,
-    #                    help="raw command wich will be send to the .evasion box (will be send as it is without check), must be an integer")
-    parser.add_argument("-cv", "--convert_command", type=type_command, nargs='+',
-                        help="convert a valid command from name to value or from value to name")
+    parser.add_argument("-rc", "--raw_command", type=int,
+                        help="raw command which will be send to the .evasion "
+                        "box (will be send as it is without check), must be "
+                        "an integer")
+    parser.add_argument("-cv", "--convert_command",
+                        type=type_command, nargs='+',
+                        help="convert a valid command from name to value or "
+                             "from value to name")
     parser.add_argument("-lc", "--list_commands",
                         help="display the list of known commands",
                         action="store_true")
-    
+
     args = parser.parse_args()
 
     if args.verbose:
@@ -388,22 +424,24 @@ def main():
         for arg, value in vars(args).items():
             print("'" + arg + "': " + str(value))
         print()
-             
+
     if args.list_commands:
         if args.verbose:
-            print("Display the list of valid know command for the .evasion box:\n")
+            print("Display the list of valid know command for the .evasion "
+                  "box:\n")
         displayCommand()
-        
+
     if args.convert_command:
         for cmd in args.convert_command:
-            with manageVerbose(args.verbose):
+            with ManageVerbose(args.verbose):
                 print(cmd + ": ", end='')
-            print(convertCommand(cmd.upper()))
+            print(convert_command(cmd.upper()))
 
     if args.find:
-        print("Start scanning network (this is a CPU intensive task, which needs the 'netifaces' module):")
-        with manageVerbose(args.verbose):
-            evasion = scanRFB()
+        print("Start scanning network (this is a CPU intensive task, which "
+              "needs the 'netifaces' module):")
+        with ManageVerbose(args.verbose):
+            evasion = scan_RFB(KNOWN_PORTS)
 
         if len(evasion) > 0:
             if len(evasion) == 1:
@@ -411,17 +449,17 @@ def main():
             else:
                 print("Potential .evasion boxes:")
             for box in evasion:
-                print("IP: " + box)
+                print(f"IP: {box[0]}, port: {box[1]}")
         else:
             print("No box have been found.")
 
     if args.address and args.channel:
         try:
-            with manageVerbose(args.verbose):
-                cmd_ls = channelToCommand(args.channel)
+            with ManageVerbose(args.verbose):
+                cmd_ls = channel_to_command(args.channel)
                 print(cmd_ls)
                 result, error = send_cmd(args.address, args.port, cmd_ls)
-                    
+
             if result and (args.status or args.verbose):
                 print('Success')
             elif args.status or args.verbose:
@@ -429,50 +467,49 @@ def main():
                 if args.verbose:
                     print(error)
 
-        except Exception as e:
-            print(e)
+        except Exception:
+            print(traceback.format_exc())
 
     """
     NOT WORKING
     if args.address and args.volume:
         try:
-            with manageVerbose(args.verbose):
-                cmd_ls = commandToSetvolume(args.volume)
+            with ManageVerbose(args.verbose):
+                cmd_ls = command_to_set_volume(args.volume)
                 print(cmd_ls)
                 result, error = send_cmd(args.address, args.port, cmd_ls)
-                    
+
             if result and (args.status or args.verbose):
                 print('Success')
             elif args.status or args.verbose:
                 print('Fail')
                 if args.verbose:
                     print(error)
-            
-        except Exception as e:
-            print(e)
+
+        except Exception:
+            print(traceback.format_exc())
     """
 
     if args.address and args.command:
         try:
-            cmd_ls = list()
+            cmd_ls = []
             for cmd in args.command:
-                cmd_ls.append(convertCommandToValue(cmd.upper()))
+                cmd_ls.append(convert_command_to_value(cmd.upper()))
 
-            with manageVerbose(args.verbose):
+            with ManageVerbose(args.verbose):
                 print(cmd_ls)
                 result, error = send_cmd(args.address, args.port, cmd_ls)
-                    
+
             if result and (args.status or args.verbose):
                 print('Success')
             elif args.status or args.verbose:
                 print('Fail')
                 if args.verbose:
                     print(error)
-            
-        except Exception as e:
-            print(e)
-            
-    
+
+        except Exception:
+            print(traceback.format_exc())
+
     """
     # Create a socket to be used a client
 
@@ -480,9 +517,8 @@ def main():
 
     timeout = socket.getdefaulttimeout()
 
-    print("System has default timeout of {} for create_connection".format(timeout))
+    print(f"System has default timeout of {timeout} for create_connection")
 
-    
     with socket.create_connection(("192.168.0.15",5900)) as s:
         print("connected")
         bytes2Send = str.encode("Hello server system!")
@@ -493,5 +529,7 @@ def main():
 
         print(data)
     """
+
+
 if __name__ == '__main__':
     main()
