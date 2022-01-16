@@ -19,7 +19,7 @@ def main():
                 print(cmd_ls)
                 # On envoie la liste de commandes
                 # et on récupère le succès de l'envoie
-                r, _ = send_cmd(BOX, PORT, cmd_ls, 2)
+                r, _ = send_cmd(BOX, PORT, cmd_ls, timeout=2)
             print("Envoie réussi" if r else "Envoie échoué")
         except Exception:
             raise NameError('Le numéro de chaîne doit-être un entier')

@@ -20,6 +20,7 @@ from __future__ import print_function
 from functools import partial
 import json
 import argparse
+import requests
 import socket
 import traceback
 import os
@@ -176,27 +177,27 @@ def scan_RFB(ports: list):
     return ls
 
 
-def display_commands(display: bool = True):
+def display_commands(commands_dict: dict, display: bool = True):
     """Display the list of valid know command (name and value)."""
-    commands = COMMANDS_RFB_LS
+    commands = list(commands_dict.keys())
     commands.sort()
 
     commands_list = (
-        f"{command} = {COMMANDS_RFB[command]}" for command in commands)
+        f"{command} = {commands_dict[command]}" for command in commands)
 
     if display:
         print('\n'.join(commands_list))
     return commands_list
 
 
-def is_valid_command(temp_command):
+def is_valid_command(commands_dict: dict, temp_command: str):
     """Check the command validity (non case sensitive)."""
-    if temp_command.upper() in COMMANDS_RFB_LS:
+    if temp_command.upper() in list(commands_dict.keys()):
         return True
     elif True:
         try:
             cmd = int(temp_command)
-            if cmd in COMMANDS_RFB.values():
+            if cmd in commands_dict.values():
                 return True
             else:
                 return False
@@ -207,24 +208,24 @@ def is_valid_command(temp_command):
         return False
 
 
-def convert_command_to_value(temp_command):
+def convert_command_to_value(commands_dict: dict, temp_command: str):
     """Convert a command (name or value to value)."""
-    if is_valid_command(temp_command):
+    if is_valid_command(commands_dict, temp_command):
         try:
-            return COMMANDS_RFB[temp_command]
-        except Exception:
+            return commands_dict[temp_command]
+        except Exception:  # Maybe it is already a value.
             return int(temp_command)
 
 
-def convert_command(temp_command):
+def convert_command(commands_dict: dict, temp_command: str):
     """Convert a command (value to name or name to value)."""
     try:
-        return COMMANDS_RFB[temp_command]
+        return commands_dict[temp_command]
     except Exception:
         keys = []
         if keys is None:
             print("NO KEY FOUND")
-        for key, val in COMMANDS_RFB.items():
+        for key, val in commands_dict.items():
             if val == int(temp_command):
                 keys.append(key)
         if keys:
@@ -251,7 +252,8 @@ def type_port(a_string: str):
 
 def type_command(a_string: str):
     """Check the "type" in the parser for the command."""
-    if is_valid_command(a_string):
+    if (is_valid_command(COMMANDS_HTTP, a_string)
+            or is_valid_command(COMMANDS_RFB, a_string)):
         return a_string
     else:
         raise argparse.ArgumentTypeError(
@@ -270,79 +272,116 @@ def display_security_type(sec_type: int, display: bool = True) -> None:
 
 def gen_packet_from_cmd(cmd: str) -> bytes:
     """
-    Generate a bytes array with the command to send (KEYDOWN_KEY, KEYUP_KEY)
+    Generate a bytes array with the command to send (KEYDOWN_KEY, KEYUP_KEY).
     """
     return (b'\x04\x01\x00\x00' + (cmd).to_bytes(4, byteorder='big')
             + b'\x04\x00\x00\x00' + (cmd).to_bytes(4, byteorder='big'))
 
 
-def channel_to_command(ch):
+def channel_to_command(commands_dict: dict, channel: str):
     """Convert a channel number in a sequence of command."""
     cmd_ls = []
     try:
-        ch_str = str(abs(ch))
+        channel_str = str(abs(channel))
     except Exception:
         print(traceback.format_exc())
         exit(1)
 
-    for c in ch_str:
-        cmd_ls.append(convert_command_to_value('REMOTE_' + c))
-    cmd_ls.append(convert_command_to_value('OK'))
+    for figure in channel_str:
+        cmd_ls.append(convert_command_to_value(
+            commands_dict, f'REMOTE_{figure}'))
+    cmd_ls.append(convert_command_to_value(commands_dict, 'OK'))
     return cmd_ls
 
 
-def send_cmd(ip, port, cmd, timeout=None):
+def send_cmd(ip, port, cmd, protocol="RFB", timeout=None):
     """Send the command to the defined address."""
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as vnc:
-            print("1. Initialize connection to:\n IP: " +
-                  ip + "\n Port: " + str(port))
-            if (timeout and (isinstance(timeout, float)
-                             or isinstance(timeout, int))):
-                vnc.settimeout(timeout)
-            vnc.connect((ip, 5900))
-            vnc_ver = vnc.recv(12)
-            print(f"Receive RFB protocol version: {vnc_ver}")
-            vnc.send(vnc_ver)
-            print(f"Send back RFB protocol version: {vnc_ver}")
-            print("2. Receive security")
-            nb_sec_types = ord(vnc.recv(1))
-            # print(nb_sec_types.decode())
-            print(f"Nb security types: {nb_sec_types}")
+        if protocol == "RFB":
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as vnc:
+                print(
+                    f"1. Initialize connection to:\n IP: {ip}\n Port: {port}")
 
-            for _ in range(nb_sec_types):
-                sec_type = ord(vnc.recv(1))
-                display_security_type(sec_type)
+                if (timeout and (
+                        isinstance(timeout, float)
+                        or isinstance(timeout, int))):
+                    vnc.settimeout(timeout)
+                vnc.connect((ip, 5900))
+                vnc_ver = vnc.recv(12)
+                print(f"Receive RFB protocol version: {vnc_ver}")
+                vnc.send(vnc_ver)
+                print(f"Send back RFB protocol version: {vnc_ver}")
+                print("2. Receive security")
+                nb_sec_types = ord(vnc.recv(1))
+                # print(nb_sec_types.decode())
+                print(f"Nb security types: {nb_sec_types}")
 
-            ClientInit = b'\x01'
-            print(f"3. Send ClientInit message: {ClientInit}")  # Send 1 byte
-            # 0 -> Non exclusive connection, 1 -> exclusive connection
-            vnc.send(ClientInit)
+                for _ in range(nb_sec_types):
+                    sec_type = ord(vnc.recv(1))
+                    display_security_type(sec_type)
 
-            print(f"Receive ServerInit: {vnc.recv(4096)}")
+                ClientInit = b'\x01'
+                # Send 1 byte
+                print(f"3. Send ClientInit message: {ClientInit}")
+                # 0 -> Non exclusive connection, 1 -> exclusive connection
+                vnc.send(ClientInit)
 
-            ClientEncodage = b'\x01'
-            # Send 1 byte
-            print(f"4. Send Client to server message: {ClientEncodage}")
-            vnc.send(ClientEncodage)
+                print(f"Receive ServerInit: {vnc.recv(4096)}")
 
-            print(f"Receive from ServerClient: {vnc.recv(4096)}")
+                ClientEncodage = b'\x01'
+                # Send 1 byte
+                print(f"4. Send Client to server message: {ClientEncodage}")
+                vnc.send(ClientEncodage)
+
+                print(f"Receive from ServerClient: {vnc.recv(4096)}")
+                if isinstance(cmd, str):
+                    print(
+                        f"5. Send command '{cmd}': {gen_packet_from_cmd(cmd)}"
+                    )
+                    vnc.send(gen_packet_from_cmd(cmd))
+                elif isinstance(cmd, list):
+                    if len(cmd) > 1:
+                        print("5. Send multiple commands:")
+                    else:
+                        print("5. ", end="")
+
+                    for c in cmd:
+                        print(
+                            f"\tSend command '{c}': {gen_packet_from_cmd(c)}")
+                        vnc.send(gen_packet_from_cmd(c))
+                else:
+                    raise NameError('In function send_cmd(), "cmd" should be'
+                                    ' a string or a list of string.')
+                return True, None
+
+        elif protocol == "HTTP":
+            print(f"To:\n IP: {ip} PORT: {port}")
             if isinstance(cmd, str):
-                print(f"5. Send command '{cmd}': {gen_packet_from_cmd(cmd)}")
-                vnc.send(gen_packet_from_cmd(cmd))
+                print(f"Send command '{cmd}': {cmd}")
+                data = {'code': cmd}
+                r = requests.post(
+                    url=f"http://{ip}:{port}/apps/mzcast/run/rcu", json=data)
+                if r.status_code != 202:
+                    raise NameError('In function send_cmd(), send error')
             elif isinstance(cmd, list):
                 if len(cmd) > 1:
-                    print("5. Send multiple commands:")
+                    print("Send multiple commands:")
                 else:
-                    print("5. ", end="")
+                    print("", end="")
 
                 for c in cmd:
-                    print(f"\tSend command '{c}': {gen_packet_from_cmd(c)}")
-                    vnc.send(gen_packet_from_cmd(c))
+                    data = {'code': c}
+                    r = requests.post(
+                        url=f"http://{ip}:{port}/apps/mzcast/run/rcu",
+                        json=data)
+                    if r.status_code != 202:
+                        raise requests.RequestException(
+                            f'In function send_cmd(), error {r.status_code}')
             else:
                 raise NameError('In function send_cmd(), "cmd" should be a '
                                 'string or a list of string.')
             return True, None
+
     except Exception as e:
         print(traceback.format_exc())
         return False, e
@@ -353,6 +392,13 @@ def main():
     parser.add_argument("-v", "--verbose", default=False,
                         help="increase output verbosity",
                         action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("-http", action="store_true", default=True,
+                      help="use the HTTP mode for VOO TV+ .evasion boxes "
+                      "(default).")
+    mode.add_argument("-rfb", action="store_true", default=False,
+                      help="use RFB for legacy .evasion boxes (default is to "
+                      "use RFB).")
     parser.add_argument("-f", "--find", default=False,
                         help="return a list of potential .evasion boxes.",
                         action="store_true")
@@ -362,9 +408,10 @@ def main():
                         action="store_true")
     parser.add_argument("-a", "--address", type=str,
                         help="IP address of the .evasion box")
-    parser.add_argument("-p", "--port", type=type_port, default=5900,
-                        help="port of the .evasion box, default is 5900 "
-                             "[optional], note that VOO TV+ uses ")
+    parser.add_argument("-p", "--port", type=type_port, default=-1,
+                        help="port of the .evasion box, default is 5900 (in "
+                        "mode RFB) [optional], note that VOO TV+ uses 38520 "
+                        "(default in mode HTTP)")
     parser.add_argument("-c", "--command", type=type_command, nargs='+',
                         help="command to send to the .evasion box (the "
                              "command is checked), name of the command and "
@@ -372,6 +419,7 @@ def main():
     parser.add_argument("-ch", "--channel", type=int,
                         help="send the command to the .evasion box to change "
                              "the channel (must be an integer)")
+
     # # NOT WORKING
     # parser.add_argument("-vol", "--volume", type=int,
     #                     help="send the command to the .evasion box to change"
@@ -390,30 +438,42 @@ def main():
                         action="store_true")
 
     args = parser.parse_args()
+    args.http = not args.rfb
+    mode = "HTTP" if args.http else "RFB"
+    if args.port == -1:
+        args.port = 38520 if args.http else 5900
 
     if args.verbose:
         print("Python 3 based .evasion box API")
         print("Verbosity turned on.\n")
         print("Arguments:\n")
         for arg, value in vars(args).items():
-            print("'" + arg + "': " + str(value))
+            print(f"\t'{arg}': {value}")
         print()
 
     if args.list_commands:
         if args.verbose:
-            print("Display the list of valid know command for the .evasion "
+            print("Display the list of valid know commands for the .evasion "
                   "box:\n")
-        display_commands()
+        print("RFB based command:")
+        display_commands(COMMANDS_RFB)
+        print("\nHTTP based command:")
+        display_commands(COMMANDS_HTTP)
 
     if args.convert_command:
+        with ManageVerbose(args.verbose):
+            print(f"Command(s) or value(s) for {mode} mode: ")
         for cmd in args.convert_command:
             with ManageVerbose(args.verbose):
-                print(cmd + ": ", end='')
-            print(convert_command(cmd.upper()))
+                print(f"\t{cmd}: ", end='')
+            print(convert_command(
+                COMMANDS_HTTP if mode == "HTTP" else COMMANDS_RFB,
+                cmd.upper()))
 
     if args.find:
         print("Start scanning network (this is a CPU intensive task, which "
-              "needs the 'netifaces' module):")
+              "needs the 'netifaces' module and only works with legacy "
+              ".evasion boxes which use the RBF protocol instead of HTTP):")
         with ManageVerbose(args.verbose):
             evasion = scan_RFB(KNOWN_PORTS_RFB)
 
@@ -427,12 +487,15 @@ def main():
         else:
             print("No box have been found.")
 
+    # Set channel
     if args.address and args.channel:
         try:
             with ManageVerbose(args.verbose):
-                cmd_ls = channel_to_command(args.channel)
+                cmd_ls = channel_to_command(
+                    COMMANDS_HTTP if mode == "HTTP" else COMMANDS_RFB,
+                    args.channel)
                 print(cmd_ls)
-                result, error = send_cmd(args.address, args.port, cmd_ls)
+                result, error = send_cmd(args.address, args.port, cmd_ls, mode)
 
             if result and (args.status or args.verbose):
                 print('Success')
@@ -464,15 +527,19 @@ def main():
             print(traceback.format_exc())
     """
 
+    # Send command to the box
     if args.address and args.command:
         try:
             cmd_ls = []
             for cmd in args.command:
-                cmd_ls.append(convert_command_to_value(cmd.upper()))
+                cmd_ls.append(convert_command_to_value(
+                    COMMANDS_HTTP if mode == "HTTP" else COMMANDS_RFB,
+                    cmd.upper()))
 
             with ManageVerbose(args.verbose):
                 print(cmd_ls)
-                result, error = send_cmd(args.address, args.port, cmd_ls)
+                result, error = send_cmd(
+                    args.address, args.port, cmd_ls, mode)
 
             if result and (args.status or args.verbose):
                 print('Success')
