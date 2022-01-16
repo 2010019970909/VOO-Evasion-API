@@ -26,7 +26,7 @@ import sys
 
 KNOWN_PORTS = [5900, 38520]
 
-command = {
+COMMANDS = {
     "REMOTE_0": 58112,
     "REMOTE_1": 58113,
     "REMOTE_2": 58114,
@@ -65,7 +65,7 @@ command = {
     "OK": 57345,
 }
 
-command_ls = list(command.keys())
+COMMANDS_LS = list(COMMANDS.keys())
 
 
 class ManageVerbose:
@@ -208,23 +208,27 @@ def scan_RFB(ports: list):
     return ls
 
 
-def displayCommand():
+def display_commands(display: bool = True):
     """Display the list of valid know command (name and value)."""
-    commands = list(command.keys())
+    commands = COMMANDS_LS
     commands.sort()
 
-    for cmd in commands:
-        print(f"{cmd} = {command[cmd]}")
+    commands_list = (
+        f"{command} = {COMMANDS[command]}" for command in commands)
+
+    if display:
+        print('\n'.join(commands_list))
+    return commands_list
 
 
 def is_valid_command(temp_command):
     """Check the command validity (non case sensitive)."""
-    if temp_command.upper() in command_ls:
+    if temp_command.upper() in COMMANDS_LS:
         return True
     elif True:
         try:
             cmd = int(temp_command)
-            if cmd in command.values():
+            if cmd in COMMANDS.values():
                 return True
             else:
                 return False
@@ -239,7 +243,7 @@ def convert_command_to_value(temp_command):
     """Convert a command (name or value to value)."""
     if is_valid_command(temp_command):
         try:
-            return command[temp_command]
+            return COMMANDS[temp_command]
         except Exception:
             return int(temp_command)
 
@@ -247,12 +251,12 @@ def convert_command_to_value(temp_command):
 def convert_command(temp_command):
     """Convert a command (value to name or name to value)."""
     try:
-        return command[temp_command]
+        return COMMANDS[temp_command]
     except Exception:
         keys = []
         if keys is None:
             print("NO KEY FOUND")
-        for key, val in command.items():
+        for key, val in COMMANDS.items():
             if val == int(temp_command):
                 keys.append(key)
         if keys:
@@ -287,11 +291,13 @@ def type_command(a_string: str):
             "commands")
 
 
-def displaySecurityType(sec_type: int) -> None:
+def display_security_type(sec_type: int, display: bool = True) -> None:
     """Display the security type of the RFB connection."""
     switcher = {0: "Invalid", 1: "NONE", 2: "VNC Authentication"}
     security_type = switcher.get(sec_type, "Not defined by IETF")
-    print(f' security type: {sec_type} ({security_type})')
+    if display:
+        print(f' security type: {sec_type} ({security_type})')
+    return security_type
 
 
 def gen_packet_from_cmd(cmd: str) -> bytes:
@@ -338,7 +344,7 @@ def send_cmd(ip, port, cmd, timeout=None):
 
             for _ in range(nb_sec_types):
                 sec_type = ord(vnc.recv(1))
-                displaySecurityType(sec_type)
+                display_security_type(sec_type)
 
             ClientInit = b'\x01'
             print(f"3. Send ClientInit message: {ClientInit}")  # Send 1 byte
@@ -398,15 +404,15 @@ def main():
     parser.add_argument("-ch", "--channel", type=int,
                         help="send the command to the .evasion box to change "
                              "the channel (must be an integer)")
-    # NOT WORKING
-    parser.add_argument("-vol", "--volume", type=int,
-                        help="send the command to the .evasion box to change "
-                        "the volume (must be an integer [0-20])")
-    # Not implemented
-    parser.add_argument("-rc", "--raw_command", type=int,
-                        help="raw command which will be send to the .evasion "
-                        "box (will be send as it is without check), must be "
-                        "an integer")
+    # # NOT WORKING
+    # parser.add_argument("-vol", "--volume", type=int,
+    #                     help="send the command to the .evasion box to change"
+    #                     " the volume (must be an integer [0-20])")
+    # # Not implemented
+    # parser.add_argument("-rc", "--raw_command", type=int,
+    #                     help="raw command which will be send to the .evasion"
+    #                     " box (will be send as it is without check), must be"
+    #                     " an integer")
     parser.add_argument("-cv", "--convert_command",
                         type=type_command, nargs='+',
                         help="convert a valid command from name to value or "
@@ -429,7 +435,7 @@ def main():
         if args.verbose:
             print("Display the list of valid know command for the .evasion "
                   "box:\n")
-        displayCommand()
+        display_commands()
 
     if args.convert_command:
         for cmd in args.convert_command:
