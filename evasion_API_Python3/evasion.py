@@ -18,6 +18,7 @@
 """
 from __future__ import print_function
 from functools import partial
+import json
 import argparse
 import socket
 import traceback
@@ -26,46 +27,13 @@ import sys
 
 KNOWN_PORTS_RFB = [5900]
 
-COMMANDS = {
-    "REMOTE_0": 58112,
-    "REMOTE_1": 58113,
-    "REMOTE_2": 58114,
-    "REMOTE_3": 58115,
-    "REMOTE_4": 58116,
-    "REMOTE_5": 58117,
-    "REMOTE_6": 58118,
-    "REMOTE_7": 58119,
-    "REMOTE_8": 58120,
-    "REMOTE_9": 58121,
-    "FAST_REVERSE": 58375,
-    "FAST_FORWARD": 58373,
-    "PLAY": 58368,
-    "MUTE": 57349,
-    "STAND_BY": 57344,
-    "STOP": 58370,
-    "RECORD": 58371,
-    "TV": 57360,
-    "VOD": 61224,
-    "GUIDE": 57355,
-    "INFO": 57358,
-    "MY_RECORDINGS": 61235,
-    "VIDEO_WALL": 61234,
-    "APPLICATION": 57352,
-    "BE_ON_DEMAND": 61236,
-    "BACK": 57346,
-    "HOME": 61184,
-    "VOL_UP": 57347,
-    "VOL_DOWN": 57348,
-    "UP": 57600,
-    "DOWN": 57601,
-    "LEFT": 57602,
-    "RIGHT": 57603,
-    "RED_KEY": 57856,
-    "BE_TV": 57359,
-    "OK": 57345,
-}
+KEYS_FILE = os.path.join(os.path.dirname(__file__), "evasion_keys.json")
+COMMANDS = json.load(open(KEYS_FILE, "rb"))
+COMMANDS_HTTP = COMMANDS["voo tv+"]
+COMMANDS_RFB = COMMANDS["legacy"]
 
-COMMANDS_LS = list(COMMANDS.keys())
+COMMANDS_RFB_LS = list(COMMANDS_RFB.keys())
+COMMANDS_HTTP_LS = list(COMMANDS_HTTP.keys())
 
 
 class ManageVerbose:
@@ -210,11 +178,11 @@ def scan_RFB(ports: list):
 
 def display_commands(display: bool = True):
     """Display the list of valid know command (name and value)."""
-    commands = COMMANDS_LS
+    commands = COMMANDS_RFB_LS
     commands.sort()
 
     commands_list = (
-        f"{command} = {COMMANDS[command]}" for command in commands)
+        f"{command} = {COMMANDS_RFB[command]}" for command in commands)
 
     if display:
         print('\n'.join(commands_list))
@@ -223,12 +191,12 @@ def display_commands(display: bool = True):
 
 def is_valid_command(temp_command):
     """Check the command validity (non case sensitive)."""
-    if temp_command.upper() in COMMANDS_LS:
+    if temp_command.upper() in COMMANDS_RFB_LS:
         return True
     elif True:
         try:
             cmd = int(temp_command)
-            if cmd in COMMANDS.values():
+            if cmd in COMMANDS_RFB.values():
                 return True
             else:
                 return False
@@ -243,7 +211,7 @@ def convert_command_to_value(temp_command):
     """Convert a command (name or value to value)."""
     if is_valid_command(temp_command):
         try:
-            return COMMANDS[temp_command]
+            return COMMANDS_RFB[temp_command]
         except Exception:
             return int(temp_command)
 
@@ -251,12 +219,12 @@ def convert_command_to_value(temp_command):
 def convert_command(temp_command):
     """Convert a command (value to name or name to value)."""
     try:
-        return COMMANDS[temp_command]
+        return COMMANDS_RFB[temp_command]
     except Exception:
         keys = []
         if keys is None:
             print("NO KEY FOUND")
-        for key, val in COMMANDS.items():
+        for key, val in COMMANDS_RFB.items():
             if val == int(temp_command):
                 keys.append(key)
         if keys:
