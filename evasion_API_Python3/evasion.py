@@ -204,9 +204,6 @@ def is_valid_command(commands_dict: dict, temp_command: str):
         except Exception:
             return False
 
-    else:
-        return False
-
 
 def convert_command_to_value(commands_dict: dict, temp_command: str):
     """Convert a command (name or value to value)."""
