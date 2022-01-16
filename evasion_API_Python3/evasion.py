@@ -24,7 +24,7 @@ import traceback
 import os
 import sys
 
-KNOWN_PORTS = [5900, 38520]
+KNOWN_PORTS_RFB = [5900]
 
 COMMANDS = {
     "REMOTE_0": 58112,
@@ -447,7 +447,7 @@ def main():
         print("Start scanning network (this is a CPU intensive task, which "
               "needs the 'netifaces' module):")
         with ManageVerbose(args.verbose):
-            evasion = scan_RFB(KNOWN_PORTS)
+            evasion = scan_RFB(KNOWN_PORTS_RFB)
 
         if len(evasion) > 0:
             if len(evasion) == 1:
